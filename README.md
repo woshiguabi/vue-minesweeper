@@ -2,7 +2,7 @@
 
 > A minesweeper game by vue 2.0
 
-[Online Demo](http://woshiguabi.github.io/minesweeper/)
+<a href="http://woshiguabi.github.io/minesweeper/" target="_blank">Online Demo</a>
 
 ## Build Setup
 
