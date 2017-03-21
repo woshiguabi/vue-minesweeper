@@ -2,8 +2,6 @@
 
 > A minesweeper game by vue 2.0
 
-<a href="http://woshiguabi.github.io/minesweeper/" target="_blank">Online Demo</a>
-
 ## Build Setup
 
 ``` bash

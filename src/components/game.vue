@@ -7,14 +7,14 @@
     </vue-drr>
     <div class="game-config">
       <form action="" @submit.prevent="init">
-        <label>行: <input type="number" v-model="inputRow"></label>
-        <label>列: <input type="number" v-model="inputCol"></label>
-        <label>雷的数量: <input type="number" v-model="inputBombCount"></label>
+        <label>行: <input type="number" min="2" :max="config.maxRow" v-model="inputRow"></label>
+        <label>列: <input type="number" min="2" :max="config.maxCol" v-model="inputCol"></label>
+        <label>雷的数量: <input type="number" min="1" :max="~~inputRow * ~~inputCol - 1" v-model="inputBombCount"></label>
         <button type="submit">生成</button>
       </form>
       <div v-if="showTips" class="game-config-tips">{{ tipsText }}</div>
     </div>
-    <table :width="width" class="game" :class="{'tips-open': showTips}" @mouseup="handleClick" @contextmenu.prevent="handleRightClick">
+    <table :width="width" class="game" :class="{'tips-open': showTips}" @click="handleClick" @contextmenu.prevent="handleRightClick" @dblclick="handleDblClick">
       <tr :key="row" v-for="(rows, row) in cellData">
         <cell :key="col" v-for="(cell, col) in rows" :row="cell.row" :col="cell.col" :isBomb="cell.isBomb" :status="cell.status" :isFlag="cell.isFlag" :bombCount="cell.bombCount"></cell>
       </tr>
@@ -23,12 +23,15 @@
       <div>Game Over</div>
       <div>你美丽了!</div>
       <div class="retry"><a href="#" @click.prevent="init">再试一次</a></div>
+      <div class="retry"><a href="#" @click.prevent="view">查看雷的位置</a></div>
     </div>
     <div v-if="success" class="success layer">
       <div>Win!</div>
       <div>你成功了!</div>
       <div class="retry"><a href="#" @click.prevent="init">我还要玩</a></div>
     </div>
+    <div v-if="viewBomb" class="layer-transparent"></div>
+
   </div>
 </template>
 <script>
@@ -36,6 +39,22 @@
   import config from '../config'
   import Utils from '../utils'
   import VueDRR from 'vue-drag-resize-rotate'
+
+  /* F**k IE */
+  const createRightClickEvent = (function () {
+    return 'ActiveXObject' in window ? function () {
+      let evt = document.createEvent('MouseEvent')
+      evt.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null)
+      return evt
+    } : function () {
+      let evt = new MouseEvent('click', {
+        button: 0,
+        bubbles: true
+      })
+      return evt
+    }
+  })()
+
   export default {
     name: 'game',
     components: {
@@ -48,6 +67,7 @@
         gameOver: false,
         cellData: [],
         showTips: false,
+        viewBomb: false,
         width: 0,
         flagCount: 0,
         score: 0,
@@ -74,7 +94,6 @@
           this.bombSet.forEach(e => {
             let col = e % $this.config.col
             let row = ~~(e / $this.config.col)
-            console.log(col, row)
             $this.cellData[row][col].isFlag = 1
           })
           this.$forceUpdate()
@@ -85,6 +104,17 @@
       }
     },
     methods: {
+      view () {
+        this.gameOver = false
+        this.viewBomb = true
+        let $this = this
+        this.bombSet.forEach(e => {
+          let col = e % $this.config.col
+          let row = ~~(e / $this.config.col)
+          $this.cellData[row][col].status = 1
+        })
+        this.$forceUpdate()
+      },
       init () {
         if ((~~this.inputCol) > this.config.maxCol || (~~this.inputRow) > this.config.maxRow) {
           this.tipsText = '请勿作死设置过大行列！'
@@ -106,6 +136,7 @@
         this.showTips = false
         this.success = false
         this.gameOver = false
+        this.viewBomb = false
         this.score = 0
         this.flagCount = 0
         this.width = this.config.col * 41 + 1
@@ -160,11 +191,8 @@
               cell.isTriggered = true
               aroundCell.forEach(e => {
                 if (e.isTriggered || e.isFlag || e.status === 1) return
-                let evt = new MouseEvent('mouseup', {
-                  button: 0,
-                  bubbles: true
-                })
                 // TODO: cell展开性能优化
+                let evt = createRightClickEvent()
                 nextTick(() => {
                   table.rows[e.row].cells[e.col].dispatchEvent(evt)
                 })
@@ -173,17 +201,41 @@
             this.$forceUpdate()
           }
         } else if (clickType === 2) {
-          if (!cell.isFlag) {
-            this.flagCount++
-            cell.isFlag = true
-          } else {
-            this.flagCount--
-            cell.isFlag = false
-          }
-          this.$forceUpdate()
         }
       },
-      handleRightClick () {
+      handleRightClick (ev) {
+        if (ev.target.nodeName !== 'TD') return
+        let col = ev.target.cellIndex
+        let row = ev.target.parentNode.rowIndex
+        let cell = this.cellData[row][col]
+        if (cell.status === 1) return
+        if (!cell.isFlag) {
+          this.flagCount++
+          cell.isFlag = true
+        } else {
+          this.flagCount--
+          cell.isFlag = false
+        }
+        this.$forceUpdate()
+      },
+      handleDblClick (ev) {
+        if (ev.target.nodeName !== 'TD') return
+        let col = ev.target.cellIndex
+        let row = ev.target.parentNode.rowIndex
+        let cell = this.cellData[row][col]
+        if (cell.status !== 1) return
+        let table = this.$el.querySelector('table')
+        let aroundCell = this.getAroundCell(row, col)
+        let nextTick = this.$nextTick
+        cell.isTriggered = true
+        aroundCell.forEach(e => {
+          if (e.isTriggered || e.isFlag || e.status === 1) return
+          // TODO: cell展开性能优化
+          let evt = createRightClickEvent()
+          nextTick(() => {
+            table.rows[e.row].cells[e.col].dispatchEvent(evt)
+          })
+        })
       },
       getAroundCell (row, col) {
         let rowArr = [row - 1, row, row + 1]
@@ -204,7 +256,7 @@
 <style scoped>
   .scoreboard.dragable{
     position: fixed;
-    z-index: 10;
+    z-index: 99;
     max-width: 180px;
     max-height: 180px;
     min-height: 180px;
@@ -238,6 +290,7 @@
     left: 0;
     right: 0;
     top: 0;
+    z-index: 100;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -279,6 +332,14 @@
     font-family: Arial, Microsoft Yahei;
     background-color: rgba(255, 255, 255, .7);
   }
+  .layer-transparent{
+    position: fixed;
+    z-index: 90;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
   .layer > div{
     width: 100%;
   }
@@ -313,29 +374,29 @@
     background-color: #ddd;
     cursor: pointer;
   }
-  .classic .flag{
-    cursor: pointer;
-    width: 30px;
-    height: 30px;
-    font-size: 24px;
+  .classic .bomb, .classic .flag{
     color: #f36;
-    border-style: solid;
-    border-width: 5px;
-    border-color: #eee #aaa #aaa #eee;
-    background-color: #ddd;
+    font-size: 24px;
     font-family: FontAwesome;
     font-weight: normal;
     text-rendering: auto;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  .classic .flag{
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    border-style: solid;
+    border-width: 5px;
+    border-color: #eee #aaa #aaa #eee;
+    background-color: #ddd;
+  }
   .classic .bomb{
-    font-size: 20px;
     width: 38px;
     height: 38px;
     border: 1px solid #666;
     background-color: #ccc;
-    color: #f36;
     cursor: default;
   }
   .classic [class^=bomb-count-]{
